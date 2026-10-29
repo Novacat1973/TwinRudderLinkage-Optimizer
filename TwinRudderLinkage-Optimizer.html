@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Twin-rudder linkage · kinematics and optimizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#E6ECE9; --sheet:#F7FAF8; --ink:#1A2932; --ink2:#52626A; --rule:#C2CEC9; --rule2:#DCE4E0;
+  --port:#BF2F3A; --stbd:#16775A; --target:#82939A; --warn:#A35F00; --focus:#2563C9; --fill:#DDE6E2;
+  --free:#2E5E8C; --freebg:#E3ECF5;
+  color-scheme: light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F1619; --sheet:#162026; --ink:#E1EAE6; --ink2:#9AACB2; --rule:#2B3A41; --rule2:#203038;
+    --port:#F06A72; --stbd:#3DC191; --target:#7E9097; --warn:#E3A13C; --focus:#86ACF4; --fill:#1E2B31;
+    --free:#8DB6E8; --freebg:#1B2C3B; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F1619; --sheet:#162026; --ink:#E1EAE6; --ink2:#9AACB2; --rule:#2B3A41; --rule2:#203038;
+  --port:#F06A72; --stbd:#3DC191; --target:#7E9097; --warn:#E3A13C; --focus:#86ACF4; --fill:#1E2B31;
+  --free:#8DB6E8; --freebg:#1B2C3B; color-scheme:dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:Barlow,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-size:16px;line-height:1.45;
+  font-variant-numeric:tabular-nums}
+.sheet{max-width:1400px;margin:0 auto;padding:clamp(10px,2.4vw,28px)}
+.frame{background:var(--sheet);border:1.5px solid var(--ink);padding:clamp(14px,2.2vw,28px)}
+h1,h2,h3,legend{font-family:"Barlow Semi Condensed",Barlow,"Arial Narrow",sans-serif;font-weight:600;letter-spacing:.01em}
+h1{font-size:clamp(30px,4.2vw,44px);line-height:1.05;margin:0 0 10px}
+h2{font-size:20px;margin:0 0 10px;line-height:1.2}
+h3{font-size:16.5px;margin:0 0 4px}
+p{margin:0 0 8px}
+a{color:var(--free)}
+.small{font-size:13.5px;color:var(--ink2)}
+.hint{font-size:13px;color:var(--ink2);margin:2px 0 4px}
+
+.head{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(300px,1fr);gap:28px;align-items:end;border-bottom:1.5px solid var(--ink);padding-bottom:18px;margin-bottom:22px}
+@media (max-width:900px){.head{grid-template-columns:1fr;gap:14px}}
+.lede{color:var(--ink2);margin:0;font-size:17px}
+.quick{margin:0;padding:0;list-style:none;counter-reset:q;display:grid;gap:6px;font-size:15px}
+.quick li{counter-increment:q;display:grid;grid-template-columns:26px 1fr;gap:8px;align-items:baseline}
+.quick li::before{content:counter(q);font-family:"Barlow Semi Condensed",Barlow,sans-serif;font-weight:600;color:var(--free);border:1.5px solid var(--free);border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:13px;align-self:start;margin-top:1px}
+.quickh{font-size:15px;color:var(--ink2);margin:0 0 6px}
+
+.stage{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(300px,1fr);gap:28px;align-items:start}
+@media (max-width:900px){.stage{grid-template-columns:1fr}}
+.left{display:flex;flex-direction:column;gap:20px;min-width:0}
+.plan{margin:0}
+.planhead{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px 16px;margin-bottom:4px}
+.key{display:flex;gap:14px;flex-wrap:wrap;font-size:13.5px;color:var(--ink2)}
+.key span::before{content:"";display:inline-block;width:18px;height:3px;vertical-align:middle;margin-right:6px;background:currentColor}
+.key .kp{color:var(--port)} .key .ks{color:var(--stbd)} .key .kt{color:var(--target)} .key .ki{color:var(--ink)}
+.key .kt::before{background:repeating-linear-gradient(90deg,currentColor 0 5px,transparent 5px 9px)}
+.key .muted{color:var(--ink2)} .key .muted::before{display:none}
+#plan{width:100%;height:auto;display:block}
+.scrub{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;margin-top:6px}
+.scrub label{font-weight:500}
+.scrub output{font-family:"Barlow Semi Condensed",Barlow,sans-serif;font-size:24px;font-weight:600;min-width:4.4em;text-align:right}
+input[type=range]{width:100%;accent-color:var(--ink)}
+.readout{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:10px 0 0;border:1px solid var(--rule)}
+.readout div{padding:8px 10px;border-right:1px solid var(--rule)}
+.readout div:last-child{border-right:0}
+.readout dt{font-size:13px;color:var(--ink2)}
+.readout dd{margin:0;font-family:"Barlow Semi Condensed",Barlow,sans-serif;font-size:26px;font-weight:600;line-height:1.15}
+.readout .p dd{color:var(--port)} .readout .s dd{color:var(--stbd)} .readout .w dd{color:var(--warn)}
+@media (max-width:540px){.readout{grid-template-columns:repeat(2,1fr)} .readout div:nth-child(2){border-right:0} .readout div:nth-child(-n+2){border-bottom:1px solid var(--rule)}}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:20px;border-top:1px solid var(--rule);padding-top:16px}
+@media (max-width:1100px){.charts{grid-template-columns:1fr}}
+.charts figure{margin:0;min-width:0}
+.charts figcaption{margin-bottom:4px}
+.charts svg{width:100%;height:auto;display:block}
+
+.panel{display:flex;flex-direction:column;gap:14px;min-width:0}
+fieldset{border:0;border-top:1px solid var(--rule);margin:0;padding:10px 0 0;min-width:0}
+legend{font-size:17px;padding:0 8px 0 0}
+.field{display:grid;grid-template-columns:minmax(0,1fr) 84px 22px 132px;gap:6px;align-items:center;margin:4px 0;padding:4px 5px;border-radius:3px}
+.field label.l{font-size:14.5px;line-height:1.25}
+.field small{display:block;color:var(--ink2);font-size:12.5px}
+.field input[type=text]{width:100%;font:inherit;font-size:15px;padding:5px 7px;text-align:right;color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:3px}
+.field input[aria-invalid=true]{border-color:var(--warn)}
+.field .u{font-size:13px;color:var(--ink2)}
+@media (max-width:520px){.field{grid-template-columns:minmax(0,1fr) 84px 22px} .field .seg{grid-column:1 / -1;justify-self:end}}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:4px;overflow:hidden;font-size:13px}
+.seg label{display:block;cursor:pointer}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg span{display:block;padding:4px 9px;color:var(--ink2)}
+.seg label+label span{border-left:1px solid var(--rule)}
+.seg input:checked+span{background:var(--ink);color:var(--sheet);font-weight:500}
+.seg input[value=opt]:checked+span{background:var(--free);color:var(--sheet)}
+.seg input:focus-visible+span{outline:2px solid var(--focus);outline-offset:-2px}
+.field.isfree{background:var(--freebg)}
+.field.isfree input[type=text]{border-color:var(--free);background:var(--sheet)}
+.field.isfree .u{color:var(--free)}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+.optim{margin-top:26px;border:1.5px solid var(--free);border-radius:4px;padding:16px 18px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr) minmax(0,.9fr);gap:24px}
+@media (max-width:1000px){.optim{grid-template-columns:1fr}}
+.optim h2{color:var(--free);margin-bottom:6px}
+.what{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:15px;margin:10px 0 8px}
+.what dt{color:var(--ink2)} .what dd{margin:0;font-weight:500}
+.what dd.o{color:var(--free)}
+.formula{font-size:14.5px;background:var(--paper);border-left:3px solid var(--free);padding:9px 12px;margin:0 0 8px;line-height:1.65}
+.formula i{font-family:Georgia,"Times New Roman",serif}
+button{font:inherit;font-size:16px;font-weight:600;padding:10px 18px;border-radius:3px;border:1px solid var(--free);background:var(--free);color:var(--sheet);cursor:pointer}
+button:hover{opacity:.9}
+.status{font-size:14.5px;min-height:1.4em;margin:12px 0 0}
+.status ul{margin:6px 0 0;padding-left:18px}
+.note-warn{color:var(--warn)}
+
+.results{margin-top:26px}
+.kv{columns:2;column-gap:40px;border-top:1.5px solid var(--ink)}
+@media (max-width:800px){.kv{columns:1}}
+.kv div{break-inside:avoid;display:flex;justify-content:space-between;gap:14px;padding:7px 0;border-bottom:1px solid var(--rule2);font-size:15px}
+.kv b{font-weight:600;white-space:nowrap}
+.kv .warn{color:var(--warn)}
+
+.ref{margin-top:30px;border-top:1.5px solid var(--ink);padding-top:18px}
+.refgrid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+@media (max-width:800px){.refgrid{grid-template-columns:1fr}}
+.refgrid figure{margin:0}
+.refgrid svg{width:100%;height:auto;display:block;border:1px solid var(--rule);background:var(--paper)}
+.refgrid figcaption{font-size:14px;color:var(--ink2);margin-top:6px;max-width:66ch}
+.defs{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:4px 28px;margin-top:16px;font-size:14.5px}
+.defs p{margin:0 0 6px}
+.defs b{font-weight:600}
+.sk line,.sk path,.sk circle,.sk polyline,.sk polygon,.sk rect{vector-effect:non-scaling-stroke}
+.sk .i{stroke:var(--ink);fill:none}
+.sk .d{stroke:var(--ink2);fill:none;stroke-dasharray:4 4}
+.sk .m{stroke:var(--free);fill:none}
+.sk .p{stroke:var(--port)} .sk .s{stroke:var(--stbd)}
+.sk text{fill:var(--ink);font-size:12px}
+.sk .tm{fill:var(--free);font-weight:600}
+.sk .tl{fill:var(--ink2);font-size:11px}
+
+.tips{margin-top:30px;border-top:1.5px solid var(--ink);padding-top:18px}
+.steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px 28px;counter-reset:st}
+.steps li{counter-increment:st;display:grid;align-content:start;grid-template-columns:34px 1fr;gap:0 8px;font-size:15px}
+.steps li::before{content:counter(st);grid-row:1;grid-column:1;font-family:"Barlow Semi Condensed",Barlow,sans-serif;font-weight:600;font-size:20px;line-height:1.1;color:var(--free);border:1.5px solid var(--free);border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center}
+.steps h3{grid-column:2;align-self:center;margin:0 0 2px}
+.steps p{margin:0;color:var(--ink2);grid-column:2}
+.notes{margin-top:24px;color:var(--ink2);font-size:14px;border-top:1px solid var(--rule);padding-top:12px}
+svg text{font-family:Barlow,"Segoe UI",Arial,sans-serif}
+</style>
+</head>
+<body>
+<main class="sheet">
+<div class="frame">
+  <header class="head">
+    <div>
+      <h1>Twin-rudder linkage</h1>
+      <p class="lede">For twin rudders steered by one tiller and two push rods. The calculator follows both rudders in three dimensions, including rudder axes canted outward, and finds the tiller joint positions and rudder arm angle that make both blades move together, with the inner rudder turning only slightly further.</p>
+    </div>
+    <div>
+      <p class="quickh">How to use it</p>
+      <ol class="quick">
+        <li>Enter your boat’s geometry and rudder arm.</li>
+        <li>Set the targets: tiller sweep, ratio and inner rudder extra.</li>
+        <li>Choose which values the optimizer may change, then run it.</li>
+      </ol>
+    </div>
+  </header>
+
+  <section class="stage">
+    <div class="left">
+      <figure class="plan">
+        <div class="planhead">
+          <h2>Plan view, bow up</h2>
+          <div class="key"><span class="kp">Port rudder</span><span class="ks">Starboard rudder</span><span class="muted">grey: rudders centred</span></div>
+        </div>
+        <svg id="plan" role="img" aria-label="Plan view of the linkage at the selected tiller angle"></svg>
+        <div class="scrub">
+          <label for="psi">Tiller</label>
+          <input id="psi" type="range" min="-50" max="50" step="0.5" value="30" aria-describedby="psiHint">
+          <output id="psiOut" for="psi">30.0°</output>
+        </div>
+        <p class="hint" id="psiHint">Positive means tiller end to starboard, so the boat turns to port. Positive rudder angle means trailing edge to port.</p>
+        <dl class="readout">
+          <div class="p"><dt>Port rudder</dt><dd id="rP">–</dd></div>
+          <div class="s"><dt>Starboard rudder</dt><dd id="rS">–</dd></div>
+          <div><dt>Inner rudder extra</dt><dd id="rD">–</dd></div>
+          <div id="rMbox"><dt>Transmission angle</dt><dd id="rM">–</dd></div>
+        </dl>
+      </figure>
+
+      <section class="charts" aria-label="Behaviour over the tiller angle">
+        <figure>
+          <figcaption><h3>Rudder angle vs tiller angle</h3>
+            <div class="key"><span class="kp">inner</span><span class="ks">outer</span><span class="kt">target</span></div></figcaption>
+          <svg id="ch1" viewBox="0 0 480 300" role="img" aria-label="Inner and outer rudder angle over tiller angle"></svg>
+        </figure>
+        <figure>
+          <figcaption><h3>Extra angle on the inner rudder</h3>
+            <div class="key"><span class="ki">computed</span><span class="kt">target</span></div></figcaption>
+          <svg id="ch2" viewBox="0 0 480 300" role="img" aria-label="Inner minus outer rudder angle over tiller angle"></svg>
+        </figure>
+      </section>
+    </div>
+
+    <div class="panel" id="panel">
+      <fieldset>
+        <legend>Fixed geometry</legend>
+        <p class="hint">Measured to axis point A of each rudder, see <a href="#reference">reference system</a>.</p>
+        <div class="field"><label class="l" for="dX">A aft of tiller pivot<small>ΔX, fore and aft</small></label><input type="text" id="dX" inputmode="decimal"><span class="u">mm</span><span></span></div>
+        <div class="field"><label class="l" for="dY">A off centreline<small>ΔY, each side</small></label><input type="text" id="dY" inputmode="decimal"><span class="u">mm</span><span></span></div>
+        <div class="field"><label class="l" for="cant">Rudder axis cant<small>outward, from vertical</small></label><input type="text" id="cant" inputmode="decimal"><span class="u">°</span><span></span></div>
+      </fieldset>
+      <fieldset>
+        <legend>Rudder arm</legend>
+        <div class="field"><label class="l" for="r">Arm length<small>axis to joint centre</small></label><input type="text" id="r" inputmode="decimal"><span class="u">mm</span><span></span></div>
+        <div class="field" data-k="beta"><label class="l" for="beta">Arm angle<small>0 = in line with the blade, minus = outward</small></label><input type="text" id="beta" inputmode="decimal"><span class="u">°</span>
+          <div class="seg" role="radiogroup" aria-label="Arm angle"><label><input type="radio" name="m-beta" value="fixed"><span>Fixed</span></label><label><input type="radio" name="m-beta" value="opt"><span>Optimize</span></label></div></div>
+      </fieldset>
+      <fieldset>
+        <legend>Tiller joints</legend>
+        <div class="field" data-k="xT"><label class="l" for="xT">Ahead of tiller pivot<small>x, along the tiller axis</small></label><input type="text" id="xT" inputmode="decimal"><span class="u">mm</span>
+          <div class="seg" role="radiogroup" aria-label="Ahead of tiller pivot"><label><input type="radio" name="m-xT" value="fixed"><span>Fixed</span></label><label><input type="radio" name="m-xT" value="opt"><span>Optimize</span></label></div></div>
+        <div class="field" data-k="yT"><label class="l" for="yT">Sideways, each joint<small>y, plus = same side as its rudder</small></label><input type="text" id="yT" inputmode="decimal"><span class="u">mm</span>
+          <div class="seg" role="radiogroup" aria-label="Sideways, each joint"><label><input type="radio" name="m-yT" value="fixed"><span>Fixed</span></label><label><input type="radio" name="m-yT" value="opt"><span>Optimize</span></label></div></div>
+        <div class="field"><label class="l" for="dz">Joint height offset<small>tiller joint above rudder joint, 0 = rods level</small></label><input type="text" id="dz" inputmode="decimal"><span class="u">mm</span><span></span></div>
+      </fieldset>
+      <fieldset>
+        <legend>Targets</legend>
+        <div class="field"><label class="l" for="psiMax">Tiller sweep, each side<small>as far as the cockpit allows</small></label><input type="text" id="psiMax" inputmode="decimal"><span class="u">°</span><span></span></div>
+        <div class="field"><label class="l" for="ratio">Ratio rudder : tiller<small>usually 0.9 to 1.0</small></label><input type="text" id="ratio" inputmode="decimal"><span class="u"></span><span></span></div>
+        <div class="field"><label class="l" for="ack">Inner rudder extra<small>at full sweep, usually 0.5 to 2°</small></label><input type="text" id="ack" inputmode="decimal"><span class="u">°</span><span></span></div>
+        <div class="field"><label class="l" for="muMin">Minimum transmission angle<small>lower limit, usually 40°</small></label><input type="text" id="muMin" inputmode="decimal"><span class="u">°</span><span></span></div>
+      </fieldset>
+    </div>
+  </section>
+
+  <section class="optim" aria-labelledby="optH">
+    <div>
+      <h2 id="optH">Optimizer</h2>
+      <p>Values set to <b>Optimize</b> are only starting points: the optimizer changes them until both rudders follow the target curves as closely as possible. Values set to <b>Fixed</b> stay exactly as entered.</p>
+      <dl class="what">
+        <dt>Optimized</dt><dd class="o" id="wFree">–</dd>
+        <dt>Kept as entered</dt><dd id="wFix">–</dd>
+        <dt>Target</dt><dd id="wGoal">–</dd>
+      </dl>
+      <p class="small" id="wNote"></p>
+    </div>
+    <div>
+      <h3>How it works</h3>
+      <div class="formula">
+        Target curves for tiller angle <i>ψ</i> from 0 to <i>ψ</i><sub>max</sub>:<br>
+        <i>δ</i><sub>inner</sub> = <i>i</i>·<i>ψ</i> + ½·<i>Δ</i>·(<i>ψ</i>/<i>ψ</i><sub>max</sub>)²<br>
+        <i>δ</i><sub>outer</sub> = <i>i</i>·<i>ψ</i> − ½·<i>Δ</i>·(<i>ψ</i>/<i>ψ</i><sub>max</sub>)²<br>
+        with ratio <i>i</i> and inner rudder extra <i>Δ</i>.
+      </div>
+      <p class="small">It minimizes the mean squared deviation of both rudders from these curves at 24 tiller angles, plus a penalty wherever the transmission angle drops below the limit. The rod length is reset each time so that both rudders sit at 0° with the tiller centred. Method: Nelder–Mead simplex, started from your current values and from a parallelogram linkage, each with two restarts.</p>
+    </div>
+    <div>
+      <h3>Run</h3>
+      <button id="run" type="button">Run optimizer</button>
+      <div class="status" id="status" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section class="results" aria-labelledby="resH">
+    <h2 id="resH">Results</h2>
+    <div class="kv" id="tbl"></div>
+  </section>
+
+  <section class="ref" id="reference">
+    <h2>Reference system</h2>
+    <div class="refgrid">
+      <figure>
+        <svg class="sk" viewBox="0 0 400 300" role="img" aria-label="Sketch, plan view with dimensions ΔX, ΔY, x, y, r and arm angle">
+          <line class="d" x1="200" y1="10" x2="200" y2="292"/>
+          <text x="206" y="20" class="tl">Centreline</text>
+          <line class="i" x1="200" y1="160" x2="200" y2="28" stroke-width="7" stroke-linecap="round"/>
+          <text x="213" y="44">Tiller</text>
+          <polygon points="200,160 176,104 224,104" fill="var(--fill)" stroke="var(--ink2)"/>
+          <circle cx="200" cy="160" r="5" fill="var(--sheet)" stroke="var(--ink)" stroke-width="2"/>
+          <text x="208" y="178" class="tl">Tiller pivot</text>
+          <circle cx="224" cy="104" r="4" fill="var(--sheet)" stroke="var(--ink)" stroke-width="2"/>
+          <circle cx="176" cy="104" r="4" fill="var(--sheet)" stroke="var(--ink)" stroke-width="2"/>
+          <text x="234" y="92" class="tl">Tiller joint</text>
+          <line class="i" x1="224" y1="104" x2="352" y2="168" stroke-width="1.5"/>
+          <line class="i" x1="176" y1="104" x2="48" y2="168" stroke-width="1.5"/>
+          <text x="284" y="125" class="tl">Rod</text>
+          <line class="s" x1="336" y1="232" x2="352" y2="168" stroke-width="3"/>
+          <line class="p" x1="64" y1="232" x2="48" y2="168" stroke-width="3"/>
+          <circle cx="352" cy="168" r="4" fill="var(--stbd)"/>
+          <circle cx="48" cy="168" r="4" fill="var(--port)"/>
+          <text x="396" y="152" class="tl" text-anchor="end">Rudder joint</text>
+          <line class="s" x1="336" y1="232" x2="336" y2="292" stroke-width="7"/>
+          <line class="p" x1="64" y1="232" x2="64" y2="292" stroke-width="7"/>
+          <circle cx="336" cy="232" r="5" fill="var(--sheet)" stroke="var(--ink)" stroke-width="2"/>
+          <circle cx="64" cy="232" r="5" fill="var(--sheet)" stroke="var(--ink)" stroke-width="2"/>
+          <text x="344" y="248" class="tm">A</text>
+          <text x="38" y="248" class="tm">A</text>
+          <line class="d" x1="336" y1="232" x2="336" y2="178"/>
+          <path class="m" d="M336,200 A32,32 0 0,1 344.8,201.3" stroke-width="1.5"/>
+          <text x="314" y="196" class="tm">β</text>
+          <text x="348" y="206" class="tm">r</text>
+          <line class="m" x1="112" y1="160" x2="112" y2="232"/>
+          <line class="m" x1="106" y1="160" x2="200" y2="160" stroke-dasharray="2 3"/>
+          <line class="m" x1="106" y1="232" x2="64" y2="232" stroke-dasharray="2 3"/>
+          <text x="117" y="202" class="tm">ΔX</text>
+          <line class="m" x1="200" y1="270" x2="336" y2="270"/>
+          <text x="258" y="264" class="tm">ΔY</text>
+          <line class="m" x1="246" y1="104" x2="246" y2="160"/>
+          <line class="m" x1="228" y1="104" x2="250" y2="104" stroke-dasharray="2 3"/>
+          <text x="250" y="138" class="tm">x</text>
+          <line class="m" x1="200" y1="86" x2="224" y2="86"/>
+          <line class="m" x1="224" y1="86" x2="224" y2="100" stroke-dasharray="2 3"/>
+          <text x="207" y="82" class="tm">y</text>
+        </svg>
+        <figcaption>Plan view, tiller centred. ΔX and ΔY run from the tiller pivot to axis point A. The tiller joints sit x ahead of the pivot and y to the side. Arm angle β is measured in the arm plane from “in line with the blade”; minus means outward.</figcaption>
+      </figure>
+      <figure>
+        <svg class="sk" viewBox="0 0 400 300" role="img" aria-label="Sketch, view from astern with cant, arm plane and axis point A">
+          <line class="d" x1="50" y1="10" x2="50" y2="292"/>
+          <text x="56" y="22" class="tl">Centreline</text>
+          <line class="i" x1="190" y1="40" x2="262" y2="290" stroke-width="2"/>
+          <text x="268" y="270" class="tl">Rudder axis</text>
+          <rect x="180" y="34" width="20" height="12" fill="var(--fill)" stroke="var(--ink2)"/>
+          <text x="174" y="44" class="tl" text-anchor="end">Upper fitting</text>
+          <line class="d" x1="190" y1="40" x2="190" y2="200"/>
+          <path class="m" d="M190,180 A140,140 0 0,0 228.7,174.5" stroke-width="1.5"/>
+          <text x="208" y="198" class="tm">Cant</text>
+          <line class="m" x1="176.5" y1="43.9" x2="206.9" y2="149.6" stroke-dasharray="2 3"/>
+          <text x="166" y="102" class="tm">h</text>
+          <line class="m" x1="153.1" y1="165.1" x2="354.9" y2="107" stroke-width="1.5"/>
+          <text x="394" y="96" class="tm" text-anchor="end">Arm plane</text>
+          <circle cx="220.4" cy="145.7" r="5" fill="var(--sheet)" stroke="var(--ink)" stroke-width="2"/>
+          <text x="226" y="166" class="tm">A</text>
+          <circle cx="262" cy="133.6" r="5" fill="var(--stbd)"/>
+          <text x="270" y="150" class="tl">Rudder joint</text>
+          <circle cx="80" cy="80" r="5" fill="var(--sheet)" stroke="var(--ink)" stroke-width="2"/>
+          <text x="62" y="68" class="tl">Tiller joint</text>
+          <line class="d" x1="80" y1="80" x2="132" y2="80"/>
+          <line class="d" x1="120" y1="133.6" x2="256" y2="133.6"/>
+          <line class="m" x1="126" y1="80" x2="126" y2="133.6"/>
+          <text x="104" y="112" class="tm" text-anchor="end">Δz</text>
+        </svg>
+        <figcaption>View from astern, starboard side. A is where the rudder axis passes through the arm plane. Δz is the height offset between the two joint centres with the tiller centred.</figcaption>
+      </figure>
+    </div>
+    <div class="defs">
+      <p><b>Axis point A.</b> Put a plane at right angles to the rudder axis through the centre of the rudder joint; this is the arm plane. A is where the rudder axis passes through it. ΔX and ΔY are measured horizontally from the tiller pivot to A.</p>
+      <p><b>If you only know the upper fitting.</b> If the arm plane lies a distance h lower, measured along the axis, A sits h·sin(cant) further outboard. Add that to ΔY. The height itself does not matter.</p>
+      <p><b>Heights.</b> Absolute heights of the tiller pivot and the rudder bearings do not matter. Only Δz counts, the height offset between tiller joint and rudder joint. A few centimetres change the ratio by about 1 %.</p>
+      <p><b>Transmission angle.</b> The angle between rod and arm, at each rudder and at the tiller. At 90° all of the rod force becomes torque; otherwise the rod force rises with 1/sin of the angle. Below about 40° the linkage gets stiff and sensitive to play; at 0° it locks at dead centre.</p>
+    </div>
+  </section>
+
+  <section class="tips">
+    <h2>Finding the best layout</h2>
+    <ol class="steps">
+      <li><h3>Measure the geometry</h3><p>Axis point A, cant and arm length as described under reference system. For heights, only Δz matters.</p></li>
+      <li><h3>Set the tiller sweep</h3><p>As far as the tiller can swing without hitting coamings or crew. The tiller end moves sideways by tiller length × sin ψ.</p></li>
+      <li><h3>Choose the ratio</h3><p>Desired rudder angle divided by tiller sweep. 30 to 35° of rudder and a ratio of 0.9 to 1.0 work well. Tiller force grows linearly with the ratio; smaller ratios need more travel.</p></li>
+      <li><h3>Set the inner rudder extra</h3><p>0.5 to 2° at full sweep. Estimate: Δ ≈ (2b/l) · sin²β, with half the rudder spacing b, distance l from the hull’s turning point to the rudders and inflow angle β at the stern in a turn. Full car-style Ackermann is too much.</p></li>
+      <li><h3>Pick the arm angle</h3><p>The rod transmits force best when it meets the arm at right angles with the tiller centred. That happens at an arm angle of about −atan(ΔX / (ΔY · cos cant)), <span id="betaPerp">–</span> for your geometry. Enter it as a start value, or set the arm angle to Optimize.</p></li>
+      <li><h3>Optimize exactly two values</h3><p>Two targets, ratio and inner rudder extra, need two optimized values. If the joint spacing on the tiller is fixed by the design: tiller joint ahead plus arm angle. If the rudder arm must stay as it is: tiller joint ahead plus sideways. With three, the optimizer also picks the solution with the largest transmission angle.</p></li>
+      <li><h3>Check beyond the stops</h3><p>Pull the slider past the tiller sweep. The linkage must not jam, and the transmission angle should stay above 40°. Set the mechanical stops just beyond the design sweep.</p></li>
+      <li><h3>Round and recheck</h3><p>Round the result to buildable values, enter them and look at the charts. The arm angle mainly shifts the inner rudder extra; the tiller joint distance ahead of the pivot mainly sets the ratio.</p></li>
+    </ol>
+    <p class="notes">Assumptions: the tiller pivot axis is vertical, the rudder axes have no rake and are canted sideways only, and both sides are mirror images. Rudder angle means rotation of the blade about its own canted axis; with the boat upright this equals the angle of attack. The target for the inner rudder extra grows with the square of the tiller angle, like the oblique inflow at the stern in a turn. Your inputs are stored in this browser.</p>
+  </section>
+</div>
+</main>
+
+<script>
+
+const DEG = Math.PI / 180;
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const mul = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const norm = a => Math.hypot(a[0], a[1], a[2]);
+const wrap = t => Math.atan2(Math.sin(t), Math.cos(t));
+
+// Koordinaten: Ursprung Pinnendrehpunkt, x nach vorn, y nach Steuerbord, z nach oben.
+// sg = -1 Backbord, +1 Steuerbord. Rudderwinkel + = Hinterkante nach Backbord.
+function makeSide(sg, p) {
+  const s = Math.sin(p.cant * DEG), c = Math.cos(p.cant * DEG);
+  const ex = [1, 0, 0], ax = [0, sg * s, -c], ein = [0, -sg * c, -s];
+  const C = [-p.dX, sg * p.dY, 0];
+  const th0 = p.beta * DEG;
+  const B0 = add(C, add(mul(ex, p.r * Math.cos(th0)), mul(ein, p.r * Math.sin(th0))));
+  const T0 = [p.xT, sg * p.yT, B0[2] + p.dz];
+  const L = norm(sub(B0, T0));
+  function at(psiDeg) {
+    const ps = psiDeg * DEG, cp = Math.cos(ps), sp = Math.sin(ps);
+    const T = [cp * T0[0] - sp * T0[1], sp * T0[0] + cp * T0[1], T0[2]];
+    const Dv = sub(C, T), A = dot(Dv, ex), B = dot(Dv, ein);
+    const K = (L * L - dot(Dv, Dv) - p.r * p.r) / (2 * p.r), R = Math.hypot(A, B);
+    if (!(R > 0) || Math.abs(K) > R) return null;
+    const ph = Math.atan2(B, A), ac = Math.acos(K / R);
+    const t1 = ph + ac, t2 = ph - ac;
+    const th = Math.abs(wrap(t1 - th0)) < Math.abs(wrap(t2 - th0)) ? t1 : t2;
+    const rot = wrap(th - th0);
+    const arm = add(mul(ex, Math.cos(th)), mul(ein, Math.sin(th)));
+    const Bp = add(C, mul(arm, p.r));
+    const rod = mul(sub(T, Bp), 1 / L);
+    const muR = Math.acos(Math.min(1, Math.abs(dot(rod, arm)))) / DEG;
+    const tn = Math.hypot(T[0], T[1]);
+    const muT = tn > 0 ? Math.acos(Math.min(1, Math.abs(dot(rod, [T[0] / tn, T[1] / tn, 0])))) / DEG : 0;
+    const chord = mul(add(mul(ex, Math.cos(rot)), mul(ein, Math.sin(rot))), -1);
+    return { delta: -sg * rot / DEG, muR, muT, C, B: Bp, T, chord };
+  }
+  return { at, L, B0, T0, C };
+}
+
+function evaluate(p, psiMax, n = 70) {
+  const P = makeSide(-1, p), S = makeSide(1, p);
+  const rows = [];
+  let muMin = 180, locked = false;
+  for (let k = 0; k <= n; k++) {
+    const psi = psiMax * k / n, a = P.at(psi), b = S.at(psi);
+    if (!a || !b) { locked = true; rows.push({ psi, inn: NaN, out: NaN }); continue; }
+    muMin = Math.min(muMin, a.muR, a.muT, b.muR, b.muT);
+    rows.push({ psi, inn: a.delta, out: b.delta });
+  }
+  const e = 0.25, a = P.at(e), b = S.at(e);
+  const i0 = a && b ? (a.delta + b.delta) / 2 / e : NaN;
+  return { rows, muMin, locked, L: P.L, B0: P.B0, T0: P.T0, i0 };
+}
+
+function cost(p, t, nFree) {
+  const P = makeSide(-1, p), S = makeSide(1, p), n = 24;
+  let se = 0, muMin = 180;
+  for (let k = 1; k <= n; k++) {
+    const psi = t.psiMax * k / n, a = P.at(psi), b = S.at(psi);
+    if (!a || !b) return 1e6;
+    const m = t.i * psi, d = t.ack * (psi / t.psiMax) ** 2;
+    se += (a.delta - (m + d / 2)) ** 2 + (b.delta - (m - d / 2)) ** 2;
+    muMin = Math.min(muMin, a.muR, a.muT, b.muR, b.muT);
+  }
+  let c = se / n;
+  if (muMin < t.muMin) c += 0.05 * (t.muMin - muMin) ** 2;
+  if (nFree > 2) c += 2e-6 * (90 - muMin) ** 2;
+  if (p.r < 40 || p.r > 400) c += 1e3;
+  if (Math.abs(p.beta) > 45) c += 1e3;
+  return c;
+}
+
+function nelderMead(f, x0, steps, iters) {
+  const n = x0.length;
+  let S = [x0.slice()];
+  for (let i = 0; i < n; i++) { const x = x0.slice(); x[i] += steps[i]; S.push(x); }
+  let F = S.map(f);
+  for (let it = 0; it < iters; it++) {
+    const idx = S.map((_, i) => i).sort((a, b) => F[a] - F[b]);
+    S = idx.map(i => S[i]); F = idx.map(i => F[i]);
+    if (it > 60 && Math.abs(F[n] - F[0]) < 1e-13) break;
+    const xo = new Array(n).fill(0);
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) xo[j] += S[i][j] / n;
+    const xr = xo.map((v, j) => 2 * v - S[n][j]), fr = f(xr);
+    if (fr < F[0]) {
+      const xe = xo.map((v, j) => v + 2 * (xr[j] - v)), fe = f(xe);
+      if (fe < fr) { S[n] = xe; F[n] = fe; } else { S[n] = xr; F[n] = fr; }
+    } else if (fr < F[n - 1]) { S[n] = xr; F[n] = fr; }
+    else {
+      const xc = fr < F[n] ? xo.map((v, j) => v + 0.5 * (xr[j] - v)) : xo.map((v, j) => v + 0.5 * (S[n][j] - v));
+      const fc = f(xc);
+      if (fc < Math.min(fr, F[n])) { S[n] = xc; F[n] = fc; }
+      else for (let i = 1; i <= n; i++) { S[i] = S[i].map((v, j) => S[0][j] + 0.5 * (v - S[0][j])); F[i] = f(S[i]); }
+    }
+  }
+  let b = 0; for (let i = 1; i <= n; i++) if (F[i] < F[b]) b = i;
+  return { x: S[b], f: F[b] };
+}
+
+const STEP = { xT: 12, yT: 12, beta: 4 };
+function optimise(p, t, keys) {
+  if (!keys.length) return { p, f: cost(p, t, 0) };
+  const f = x => { const q = { ...p }; keys.forEach((k, i) => q[k] = x[i]); return cost(q, t, keys.length); };
+  let best = { x: keys.map(k => p[k]), f: Infinity };
+  // Startpunkte: aktueller Stand und ein Parallelogramm-Ansatz, dann Neustarts vom Besten
+  const starts = [keys.map(k => p[k]), keys.map(k => ({ xT: p.r * t.i, yT: 0, beta: 0, r: p.r })[k])];
+  for (const s of starts) {
+    let res = nelderMead(f, s, keys.map(k => STEP[k]), 2500);
+    for (let k = 0; k < 2; k++) res = nelderMead(f, res.x, keys.map(k2 => STEP[k2] / 4), 2500);
+    if (res.f < best.f) best = res;
+  }
+  const q = { ...p }; keys.forEach((k, i) => q[k] = best.x[i]);
+  return { p: q, f: best.f };
+}
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+const fmt = (v, d = 1) => Number.isFinite(v) ? v.toFixed(d).replace('-', '−').replace(/^−(0\.?0*)$/, '$1') : '–';
+const num = s => parseFloat(String(s).replace('−', '-').replace(',', '.'));
+const GEO = ['dX', 'dY', 'cant', 'r', 'beta', 'xT', 'yT', 'dz'];
+const TGT = ['psiMax', 'ratio', 'ack', 'muMin'];
+const OPT = ['beta', 'xT', 'yT'];
+const NAMES = { xT: 'tiller joint ahead of pivot', yT: 'tiller joint sideways', beta: 'arm angle' };
+const UNITS = { xT: ' mm', yT: ' mm', beta: '°' };
+const DEC = { dX: 1, dY: 1, cant: 1, r: 2, beta: 2, xT: 2, yT: 2, dz: 1, psiMax: 1, ratio: 2, ack: 1, muMin: 0 };
+const DEFAULTS = { dX: 170, dY: 604, cant: 16.2, r: 146, beta: -14.5, xT: 135, yT: 40, dz: 0, psiMax: 35, ratio: 1, ack: 1.5, muMin: 40, free: ['xT', 'beta'] };
+const KEY = 'doppelruder-anlenkung-v1';
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+function readP() { const p = {}; GEO.forEach(k => p[k] = num($(k).value)); return p; }
+function readT() { return { psiMax: num($('psiMax').value), i: num($('ratio').value), ack: num($('ack').value), muMin: num($('muMin').value) }; }
+function setVals(o) { Object.entries(o).forEach(([k, v]) => { if ($(k) && typeof v === 'number' && Number.isFinite(v)) $(k).value = v.toFixed(DEC[k]); }); }
+function freeKeys() { return OPT.filter(k => document.querySelector(`input[name="m-${k}"][value="opt"]`).checked); }
+function setFree(list) { OPT.forEach(k => { document.querySelector(`input[name="m-${k}"][value="${list.includes(k) ? 'opt' : 'fixed'}"]`).checked = true; }); }
+function valid(p, t) { return GEO.every(k => Number.isFinite(p[k])) && TGT.every(k => Number.isFinite(num($(k).value))) && t.psiMax > 0 && p.r > 0 && p.dY > 0; }
+function save() { try { const o = {}; GEO.concat(TGT).forEach(k => o[k] = num($(k).value)); o.free = freeKeys(); localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} }
+function load() { try { const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const betaPerp = p => -Math.atan(p.dX / (p.dY * Math.cos(p.cant * DEG))) / DEG;
+
+// ---------- plan view ----------
+const BLADE = 300;
+function drawPlan(p, psi) {
+  const svg = $('plan'); svg.textContent = '';
+  const W = p.dY + 400, top = Math.max(420, p.xT + 140), bot = -(p.dX + BLADE + 150);
+  svg.setAttribute('viewBox', `${-W} ${-top} ${2 * W} ${top - bot}`);
+  const k = (2 * W) / Math.max(280, svg.getBoundingClientRect().width || 800), fs = px => px * k;
+  const P = makeSide(-1, p), S = makeSide(1, p);
+  const a = P.at(psi), b = S.at(psi);
+  const X = v => v[1], Y = v => -v[0];
+  const ink = css('--ink'), ink2 = css('--ink2'), rule = css('--rule'), sheet = css('--sheet');
+  const line = (u, v, st) => el('line', { x1: X(u), y1: Y(u), x2: X(v), y2: Y(v), 'vector-effect': 'non-scaling-stroke', 'stroke-linecap': 'round', ...st }, svg);
+  const circ = (v, r, st) => el('circle', { cx: X(v), cy: Y(v), r: r * k, ...st }, svg);
+  const text = (x, y, s, st) => { const t = el('text', { x, y, 'font-size': fs(13), fill: ink2, ...st }, svg); t.textContent = s; return t; };
+  line([top, 0, 0], [bot, 0, 0], { stroke: rule, 'stroke-width': 1, 'stroke-dasharray': '10 6 2 6' });
+  line([-p.dX, -W + 30, 0], [-p.dX, W - 30, 0], { stroke: rule, 'stroke-width': 1 });
+  text(fs(8), p.dX - fs(6), 'Axis points A', {});
+  text(fs(6), -top + fs(16), 'Bow', {});
+  for (const [side, st, col] of [[P, a, css('--port')], [S, b, css('--stbd')]]) {
+    line(side.C, add(side.C, [-BLADE, 0, 0]), { stroke: rule, 'stroke-width': 7 });
+    if (!st) continue;
+    const end = add(st.C, mul(st.chord, BLADE));
+    line(st.C, end, { stroke: col, 'stroke-width': 7 });
+    line(st.C, st.B, { stroke: col, 'stroke-width': 3 });
+    line(st.B, st.T, { stroke: ink, 'stroke-width': 1.6 });
+    circ(st.C, 6, { fill: sheet, stroke: ink, 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' });
+    circ(st.B, 4.5, { fill: col });
+    const tx = Math.max(-W + fs(40), Math.min(W - fs(40), X(end)));
+    text(tx, Y(end) + fs(28), fmt(st.delta) + '°', { fill: col, 'font-size': fs(19), 'font-weight': 600, 'text-anchor': 'middle', 'font-family': 'Barlow Semi Condensed, Barlow, sans-serif' });
+  }
+  const ps = psi * DEG, tip = mul([Math.cos(ps), Math.sin(ps), 0], top - fs(26)), O = [0, 0, 0];
+  if (a && b) el('polygon', { points: [O, a.T, b.T].map(v => `${X(v)},${Y(v)}`).join(' '), fill: css('--fill'), stroke: ink2, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }, svg);
+  line(O, tip, { stroke: ink, 'stroke-width': 9 });
+  circ(O, 6.5, { fill: sheet, stroke: ink, 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' });
+  if (a) circ(a.T, 4, { fill: sheet, stroke: ink, 'stroke-width': 1.6, 'vector-effect': 'non-scaling-stroke' });
+  if (b) circ(b.T, 4, { fill: sheet, stroke: ink, 'stroke-width': 1.6, 'vector-effect': 'non-scaling-stroke' });
+  if (!a || !b) text(0, Y([bot + 40, 0, 0]), 'Linkage jams in this position', { fill: css('--warn'), 'font-size': fs(15), 'text-anchor': 'middle', 'font-weight': 600 });
+  return { a, b };
+}
+
+// ---------- charts ----------
+function chart(svg, series, yMin, yMax, xMax, yStep) {
+  svg.textContent = '';
+  const m = { l: 46, r: 10, t: 10, b: 40 }, w = 480 - m.l - m.r, h = 300 - m.t - m.b;
+  const sx = x => m.l + x / xMax * w, sy = y => m.t + (1 - (y - yMin) / (yMax - yMin)) * h;
+  const ink2 = css('--ink2'), rule = css('--rule2'), id = svg.id + 'clip';
+  const cp = el('clipPath', { id }, el('defs', {}, svg)); el('rect', { x: m.l, y: m.t, width: w, height: h }, cp);
+  const xs = xMax > 30 ? 10 : 5;
+  for (let x = 0; x <= xMax + 1e-9; x += xs) {
+    el('line', { x1: sx(x), x2: sx(x), y1: m.t, y2: m.t + h, stroke: rule }, svg);
+    el('text', { x: sx(x), y: m.t + h + 19, 'font-size': 15, fill: ink2, 'text-anchor': 'middle' }, svg).textContent = x + '°';
+  }
+  for (let y = Math.ceil(yMin / yStep - 1e-9) * yStep; y <= yMax + 1e-9; y += yStep) {
+    el('line', { x1: m.l, x2: m.l + w, y1: sy(y), y2: sy(y), stroke: rule }, svg);
+    el('text', { x: m.l - 8, y: sy(y) + 5, 'font-size': 15, fill: ink2, 'text-anchor': 'end' }, svg).textContent = fmt(y, yStep < 1 ? 1 : 0) + '°';
+  }
+  el('line', { x1: m.l, x2: m.l + w, y1: sy(Math.max(0, yMin)), y2: sy(Math.max(0, yMin)), stroke: ink2 }, svg);
+  el('text', { x: m.l + w, y: 297, 'font-size': 14, fill: ink2, 'text-anchor': 'end' }, svg).textContent = 'Tiller angle';
+  const g = el('g', { 'clip-path': `url(#${id})` }, svg);
+  for (const s of series) {
+    let d = '', pen = false;
+    for (const [x, y] of s.pts) { if (!Number.isFinite(y)) { pen = false; continue; } d += (pen ? 'L' : 'M') + sx(x).toFixed(1) + ' ' + sy(y).toFixed(1); pen = true; }
+    el('path', { d, fill: 'none', stroke: s.c, 'stroke-width': s.w || 2.4, 'stroke-dasharray': s.dash || '', 'stroke-linejoin': 'round' }, g);
+  }
+}
+
+function describeOpt(t) {
+  const fk = freeKeys();
+  $('wFree').textContent = fk.length ? cap(fk.map(k => NAMES[k]).join(', ')) : 'nothing';
+  $('wFix').textContent = cap(OPT.filter(k => !fk.includes(k)).map(k => NAMES[k]).concat(['fixed geometry', 'arm length', 'joint height offset']).join(', '));
+  $('wGoal').textContent = `ratio ${fmt(t.i, 2)}, ${fmt(t.ack)}° extra on the inner rudder at ${fmt(t.psiMax)}° tiller, transmission angle at least ${fmt(t.muMin, 0)}°`;
+  const n = fk.length;
+  $('wNote').innerHTML = n === 0 ? '<span class="note-warn">Set at least one value to Optimize.</span>' :
+    n === 1 ? '<span class="note-warn">Only one value optimized: ratio and inner rudder extra cannot both be met, so the optimizer finds a compromise.</span>' :
+    n === 2 ? 'Two optimized values for two targets: the normal case.' :
+    'Three optimized values: the targets can be met in several ways, so the optimizer picks the solution with the largest transmission angle.';
+  document.querySelectorAll('.field[data-k]').forEach(f => f.classList.toggle('isfree', fk.includes(f.dataset.k)));
+}
+
+function render() {
+  const p = readP(), t = readT();
+  GEO.concat(TGT).forEach(k => $(k).setAttribute('aria-invalid', !Number.isFinite(num($(k).value))));
+  describeOpt(t);
+  if (!valid(p, t)) { $('status').textContent = 'One field does not contain a valid number.'; return; }
+  $('betaPerp').textContent = fmt(betaPerp(p)) + '°';
+  const sl = $('psi'), lim = Math.round(t.psiMax + 20);
+  sl.min = -lim; sl.max = lim; if (Math.abs(num(sl.value)) > lim) sl.value = 0;
+  const psi = num(sl.value);
+  $('psiOut').textContent = fmt(psi) + '°';
+  const st = drawPlan(p, psi);
+  const inner = psi >= 0 ? st.a : st.b, outer = psi >= 0 ? st.b : st.a;
+  $('rP').textContent = st.a ? fmt(st.a.delta) + '°' : '–';
+  $('rS').textContent = st.b ? fmt(st.b.delta) + '°' : '–';
+  $('rD').textContent = inner && outer ? fmt(Math.abs(inner.delta) - Math.abs(outer.delta)) + '°' : '–';
+  const muNow = st.a && st.b ? Math.min(st.a.muR, st.a.muT, st.b.muR, st.b.muT) : NaN;
+  $('rM').textContent = Number.isFinite(muNow) ? fmt(muNow, 0) + '°' : 'jammed';
+  $('rMbox').classList.toggle('w', !(muNow >= t.muMin));
+
+  const ev = evaluate(p, t.psiMax);
+  const tg = (r, sgn) => t.i * r.psi + sgn * t.ack / 2 * (r.psi / t.psiMax) ** 2;
+  const yMax1 = Math.max(10, ...ev.rows.map(r => r.inn).filter(Number.isFinite), ...ev.rows.map(r => tg(r, 1))) * 1.05;
+  chart($('ch1'), [
+    { pts: ev.rows.map(r => [r.psi, tg(r, 1)]), c: css('--target'), dash: '6 5', w: 1.6 },
+    { pts: ev.rows.map(r => [r.psi, tg(r, -1)]), c: css('--target'), dash: '6 5', w: 1.6 },
+    { pts: ev.rows.map(r => [r.psi, r.out]), c: css('--stbd') },
+    { pts: ev.rows.map(r => [r.psi, r.inn]), c: css('--port') }
+  ], 0, Math.ceil(yMax1 / 5) * 5, t.psiMax, yMax1 > 30 ? 10 : 5);
+  const diff = ev.rows.map(r => [r.psi, r.inn - r.out]);
+  const fin = diff.map(v => v[1]).filter(Number.isFinite);
+  const dMax = Math.max(1, Math.abs(t.ack), ...fin) * 1.2, dMin = Math.min(0, ...fin) * 1.2;
+  const step2 = dMax - dMin > 8 ? 2 : dMax - dMin > 3 ? 1 : 0.5;
+  chart($('ch2'), [
+    { pts: ev.rows.map(r => [r.psi, t.ack * (r.psi / t.psiMax) ** 2]), c: css('--target'), dash: '6 5', w: 1.6 },
+    { pts: diff, c: css('--ink') }
+  ], Math.floor(dMin / step2) * step2, Math.ceil(dMax / step2) * step2, t.psiMax, step2);
+
+  const last = ev.rows[ev.rows.length - 1], half = ev.rows[Math.floor((ev.rows.length - 1) / 2)];
+  let se = 0, emax = 0, n = 0;
+  for (const r of ev.rows) { if (!Number.isFinite(r.inn)) continue; const e1 = r.inn - tg(r, 1), e2 = r.out - tg(r, -1); se += e1 * e1 + e2 * e2; n += 2; emax = Math.max(emax, Math.abs(e1), Math.abs(e2)); }
+  const rT = Math.hypot(p.xT, p.yT), aT = Math.atan2(p.yT, p.xT) / DEG;
+  const rows = [
+    ['Ratio around centre', fmt(ev.i0, 3)],
+    [`At ${fmt(t.psiMax)}° tiller: inner / outer`, `${fmt(last.inn)}° / ${fmt(last.out)}°`],
+    [`Inner rudder extra at ${fmt(t.psiMax)}°, target ${fmt(t.ack)}°`, fmt(last.inn - last.out, 2) + '°'],
+    [`At ${fmt(half.psi)}° tiller: inner / outer`, `${fmt(half.inn)}° / ${fmt(half.out)}°`],
+    ['Deviation from target: mean / largest', n ? `${fmt(Math.sqrt(se / n), 2)}° / ${fmt(emax, 2)}°` : '–'],
+    ['Smallest transmission angle up to full sweep', fmt(ev.muMin, 0) + '°', ev.muMin < t.muMin || ev.locked],
+    ['Rod length, joint centre to joint centre', fmt(ev.L, 1) + ' mm'],
+    ['Tiller joints: radius / angle to tiller axis', `${fmt(rT, 1)} mm / ${fmt(aT, 1)}°`],
+    ['Arm angle with rod at right angles to the arm', fmt(betaPerp(p), 1) + '°']
+  ];
+  if (ev.locked) rows.unshift(['Linkage reaches dead centre before full sweep', 'jams', true]);
+  $('tbl').innerHTML = rows.map(r => `<div${r[2] ? ' class="warn"' : ''}><span>${r[0]}</span><b>${r[1]}</b></div>`).join('');
+  save();
+}
+
+$('panel').addEventListener('input', () => { $('status').textContent = ''; render(); });
+$('panel').addEventListener('change', render);
+$('psi').addEventListener('input', render);
+$('run').addEventListener('click', () => {
+  const p = readP(), t = readT();
+  if (!valid(p, t)) { $('status').textContent = 'One field does not contain a valid number.'; return; }
+  const keys = freeKeys();
+  if (!keys.length) { $('status').innerHTML = '<span class="note-warn">Set at least one value to Optimize.</span>'; return; }
+  $('status').textContent = 'Working …';
+  setTimeout(() => {
+    const res = optimise(p, t, keys);
+    if (res.f >= 1e5) { $('status').innerHTML = '<span class="note-warn">No valid solution found. Change the start values or the targets.</span>'; return; }
+    const vals = {}; keys.forEach(k => vals[k] = res.p[k]); setVals(vals);
+    const items = keys.map(k => `<li>${cap(NAMES[k])}: ${fmt(p[k], 2)} → <b>${fmt(res.p[k], 2)}</b>${UNITS[k]}</li>`).join('');
+    render();
+    $('status').innerHTML = `Done. Mean deviation from target ${fmt(Math.sqrt(res.f), 3)}°.<ul>${items}</ul>`;
+  }, 20);
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+let rz = 0; addEventListener('resize', () => { cancelAnimationFrame(rz); rz = requestAnimationFrame(render); });
+
+const init = { ...DEFAULTS, ...(load() || {}) };
+setVals(init);
+setFree(Array.isArray(init.free) ? init.free : DEFAULTS.free);
+render();
+</script>
+</body>
+</html>
